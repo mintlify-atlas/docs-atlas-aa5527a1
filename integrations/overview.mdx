@@ -1,0 +1,101 @@
+---
+title: "Integrating FLOSS with IDA Pro, Ghidra, and More"
+description: "Learn how FLOSS integrates with IDA Pro, Ghidra, Binary Ninja, radare2, and x64dbg to annotate your reverse engineering workspace with recovered strings."
+---
+
+FLOSS produces a structured JSON result document that every integration script consumes. The general workflow is the same across all supported tools: run FLOSS once with the `-j` flag, render a tool-specific import artifact, and apply it to your workspace. Your disassembler or debugger then displays the recovered stack strings, tight strings, and decoded strings inline — without you running the malware.
+
+## The general workflow
+
+<Steps>
+  <Step title="Run FLOSS and capture JSON output">
+    Pass the `-j` flag (or its long form `--json`) to emit a machine-readable result document and redirect it to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Render a tool-specific import artifact">
+    Run the render script for your tool, passing the JSON file as input and redirecting the output to a new file.
+
+    ```bash
+    python render-ghidra-import-script.py floss_results.json > apply_floss.py
+    ```
+
+    For IDA Pro, Ghidra, Binary Ninja, and radare2, this produces a Python script. For x64dbg, it produces a JSON database.
+  </Step>
+  <Step title="Apply the artifact to your workspace">
+    Load or run the output file inside your tool. Each integration page below explains the exact steps for that tool.
+  </Step>
+</Steps>
+
+## JSON output structure
+
+All integration scripts read the same JSON document that `floss -j` emits. The document contains three string categories under the `strings` key:
+
+```json
+{
+  "metadata": {
+    "file_path": "/path/to/suspicious.exe",
+    "imagebase": 4194304
+  },
+  "strings": {
+    "decoded_strings": [
+      {
+        "string": "http://malicious.example.com",
+        "address": 4263936,
+        "decoded_at": 4264012,
+        "address_type": "GLOBAL",
+        "decoding_routine": 4261888
+      }
+    ],
+    "stack_strings": [
+      {
+        "string": "cmd.exe",
+        "function": 4262144,
+        "program_counter": 4262200,
+        "frame_offset": 24
+      }
+    ],
+    "tight_strings": [
+      {
+        "string": "explorer.exe",
+        "function": 4263000,
+        "program_counter": 4263050,
+        "frame_offset": 8
+      }
+    ]
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `decoded_strings` | Strings recovered by emulating decoding routines. Each entry includes the virtual address where the string lives and where the decode call occurs. |
+| `stack_strings` | Strings assembled character-by-character on the stack. Each entry includes the containing function address and stack frame offset. |
+| `tight_strings` | Stack strings recovered from tight loops. Same schema as `stack_strings`. |
+| `metadata.imagebase` | Used by x64dbg to compute relative virtual addresses for comment placement. |
+
+## Supported tools
+
+<CardGroup cols={2}>
+  <Card title="IDA Pro" icon="plug" href="/integrations/ida-pro">
+    Two methods: an IDAPython plugin that runs FLOSS directly within IDA, and a render script that converts an existing JSON result into an IDA Python script.
+  </Card>
+  <Card title="Ghidra" icon="plug" href="/integrations/ghidra">
+    Generates a PyGhidra-compatible script (Ghidra 12.0+) that annotates the current program with EOL comments and bookmarks for every recovered string.
+  </Card>
+  <Card title="Binary Ninja" icon="plug" href="/integrations/binary-ninja">
+    Generates a Binary Ninja Python script that appends comments at code references for decoded strings and at the function entry for stack strings.
+  </Card>
+  <Card title="Radare2" icon="plug" href="/integrations/radare2">
+    Generates an r2 command script using `CCu` and `Ca` commands to attach base64-encoded comments and rename decoding functions.
+  </Card>
+  <Card title="x64dbg" icon="plug" href="/integrations/x64dbg">
+    Generates an x64dbg JSON database with RVA-addressed comments. Open the database file directly in x64dbg — no scripting required.
+  </Card>
+</CardGroup>
+
+<Note>
+  All render scripts require FLOSS to be installed from source. See the [installation guide](/installation) for setup instructions, including source installation.
+</Note>

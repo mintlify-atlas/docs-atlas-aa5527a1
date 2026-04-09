@@ -1,0 +1,129 @@
+---
+title: 'FLOSS Advanced Options: Functions, Signatures, and More'
+description: 'Analyze specific functions with --functions, supply custom FLIRT signatures, handle large files, override language detection, and control file format.'
+---
+
+FLOSS exposes a set of advanced options for scenarios where default analysis behavior needs to be adjusted — from targeting specific decoding routines to handling oversized binaries. Run `floss -H` to display all advanced options in the terminal.
+
+## Targeting specific functions (--functions)
+
+<ParamField path="--functions" type="string[]">
+  Analyze only the specified functions instead of running automatic decoding function discovery. Provide function virtual addresses as hex values prefixed with `0x`, space-separated.
+</ParamField>
+
+By default, FLOSS uses heuristics to identify candidate decoding functions. If you have already identified the decoding routines manually — for example, through prior static analysis in IDA Pro or Ghidra — you can skip the discovery phase entirely:
+
+```bash
+floss --functions 0x401000 0x401100 malware.exe
+```
+
+<Note>
+When `--functions` is provided, FLOSS automatically disables static string extraction and skips directly to the decoding phase for the specified functions.
+</Note>
+
+This can reduce total runtime by roughly one-third for large binaries, though the absolute time savings depend on binary size and function count. It is most useful when you have high confidence in the identified decoding routines.
+
+## Custom FLIRT signatures (--signatures)
+
+<ParamField path="--signatures" type="string" default="(embedded signatures)">
+  Path to a `.sig`, `.pat`, or `.pat.gz` file, or a directory containing multiple signature files. FLOSS uses embedded signatures by default.
+</ParamField>
+
+FLOSS ships with embedded FLIRT signatures to identify library functions. Supply your own signature set when analyzing binaries that use unusual libraries or internal toolchains:
+
+```bash
+floss --signatures ./my-sigs/ malware.exe
+floss --signatures ./custom.sig malware.exe
+```
+
+When pointing at a directory, FLOSS loads all `.sig`, `.pat`, and `.pat.gz` files found within it, sorted alphabetically by filename.
+
+## Large file support (-L / --large-file)
+
+<ParamField path="-L" type="boolean">
+  Allow processing files larger than 16 MB. Also available as `--large-file`.
+</ParamField>
+
+FLOSS refuses to emulate strings from files larger than 16 MB by default — large files require significantly more time and memory for the emulation-based extraction phases. Use `-L` to override this limit:
+
+```bash
+floss -L large_malware.exe
+```
+
+<Warning>
+Processing large files can consume substantial time and system resources. Consider using `--only static` or `--no decoded` to limit extraction scope when working with large files.
+</Warning>
+
+## Disabling progress bars (--disable-progress)
+
+<ParamField path="--disable-progress" type="boolean">
+  Suppress all progress bar output. Equivalent effect to `-q` for progress indicators, but does not affect string output formatting.
+</ParamField>
+
+```bash
+floss --disable-progress malware.exe
+```
+
+Use this flag in CI/CD pipelines, automated scripts, or any environment where spinner and progress bar output is disruptive.
+
+## Language override (--language)
+
+<ParamField path="--language" type="string" default="auto">
+  Manually select the language-specific extraction mode. Accepts `go`, `rust`, or `none`. By default, FLOSS auto-detects the source language.
+</ParamField>
+
+FLOSS automatically identifies binaries compiled from Go or Rust and applies language-specific string extraction. Use `--language` to override this when automatic detection produces incorrect results:
+
+```bash
+# force Go-specific extraction
+floss --language go program.exe
+
+# disable language-specific extraction entirely
+floss --language none malware.exe
+```
+
+<Note>
+If the language you specify differs from what FLOSS auto-detects, FLOSS emits a warning that extracted strings may be incomplete or inaccurate.
+</Note>
+
+## File format (-f / --format)
+
+<ParamField path="-f" type="string" default="auto">
+  Explicitly set the input file format. Also available as `--format`. Accepted values are described below.
+</ParamField>
+
+| Value | Description |
+|---|---|
+| `auto` | Default. Detect file type from header bytes (PE `MZ`, ELF `\x7fELF`) and file extension |
+| `pe` | Windows PE file |
+| `sc32` | 32-bit raw shellcode |
+| `sc64` | 64-bit raw shellcode |
+
+```bash
+floss -f pe malware.bin       # treat as PE regardless of extension
+floss -f sc32 shellcode.bin   # analyze as 32-bit shellcode
+floss -f sc64 shellcode.bin   # analyze as 64-bit shellcode
+```
+
+For shellcode-specific workflows, see [Shellcode analysis](/usage/shellcode).
+
+## Windows context menu integration
+
+<ParamField path="--install-right-click-menu" type="boolean">
+  Install FLOSS as an **Open with FLOSS** option in the Windows Explorer right-click context menu and exit. Available on Windows only.
+</ParamField>
+
+<ParamField path="--uninstall-right-click-menu" type="boolean">
+  Remove the FLOSS right-click context menu entry from Windows Explorer and exit. Available on Windows only.
+</ParamField>
+
+After installing, you can right-click any file in Windows Explorer and select **Open with FLOSS** to run FLOSS against it directly.
+
+```cmd
+floss --install-right-click-menu
+floss --uninstall-right-click-menu
+```
+
+<Note>
+These flags are only available on Windows and only appear in the `floss -H` advanced help output.
+</Note>

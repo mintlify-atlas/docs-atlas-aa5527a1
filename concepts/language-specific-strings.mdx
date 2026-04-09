@@ -1,0 +1,165 @@
+---
+title: "Language-Specific String Extraction for Go and Rust"
+description: "How FLOSS handles non-NULL-terminated strings in Go and Rust binaries, including automatic language detection and the extraction algorithms for each."
+---
+
+Go and Rust binaries store strings in ways that defeat standard extraction tools. Unlike C, neither language null-terminates its strings. This means that when you run `strings` on a Go or Rust binary, adjacent strings run together into a single unbroken blob of text — and there is no reliable delimiter to separate them. FLOSS implements language-specific algorithms that understand the internal string representations of each compiler and recover strings as they appear in the original source code.
+
+## Why standard extraction fails
+
+Tools like `strings` find printable byte sequences by scanning for runs of ASCII or UTF-8 characters terminated by a null byte (`\x00`). This works for C strings because the C standard mandates null termination.
+
+Go and Rust take a different approach. Both languages represent strings as a struct-like pair of `(pointer, length)`. The actual character data lives in a contiguous **string blob** in the binary's read-only data section. Because there is no null terminator between adjacent strings in that blob, a naive scanner sees:
+
+```
+connectlocalhosterror: invalid
+```
+
+where the source code had three separate strings: `connect`, `localhost`, and `error: invalid`.
+
+## Automatic language detection
+
+FLOSS automatically detects whether a binary was compiled with Go or Rust before choosing an extraction strategy. You do not need to specify the language manually in most cases.
+
+For **Rust**, FLOSS searches the binary's static strings for a path matching the pattern `rustc/<hash-or-version>/library`. If found, FLOSS identifies the binary as Rust and, when possible, maps the commit hash to a known compiler version using an internal database.
+
+For **Go**, FLOSS inspects the PE file for the `pclntab` structure — the program counter line-number table embedded in every Go binary. FLOSS checks for four known magic byte sequences (`\xf0\xff\xff\xff`, `\xfb\xff\xff\xff`, `\xfa\xff\xff\xff`, `\xf1\xff\xff\xff`) that correspond to Go compiler versions 1.18, 1.12, 1.16, and 1.20 respectively. If the magic bytes have been patched or removed, FLOSS falls back to scanning for common Go runtime function names such as `runtime.main` or `runtime.morestack`.
+
+To override automatic detection and force a specific language, use the `--language` flag:
+
+```bash
+# Force Go string extraction
+floss --language go malware.exe
+
+# Force Rust string extraction
+floss --language rust malware.exe
+
+# Disable language-specific extraction entirely
+floss --language none malware.exe
+```
+
+<Note>
+Language-specific extraction currently supports Windows PE files. For non-PE formats, FLOSS falls back to standard static string extraction.
+</Note>
+
+## Go string extraction
+
+<Tabs>
+  <Tab title="Algorithm">
+    Go strings are encoded as instances of `struct String`, each containing a pointer to the string's character data and a 32- or 64-bit length field. The character data itself lives in a single **string blob** — a contiguous region of the binary's data section containing all string bytes concatenated without any delimiters.
+
+    FLOSS recovers Go strings in five steps:
+
+    <Steps>
+      <Step title="Analyze struct String instances">
+        FLOSS scans the binary for instances of `struct String` by identifying data patterns consistent with `(pointer, length)` pairs. Each candidate instance points into a region of the binary and declares a length.
+      </Step>
+      <Step title="Locate the string blob using length ordering">
+        The Go compiler stores strings in the blob sorted by ascending length. FLOSS extracts the length field from every candidate `struct String` instance and finds the **longest run of monotonically increasing lengths**. This run identifies the true string blob, because any other region producing `(pointer, length)` pairs will have random-looking lengths that do not form a long sorted sequence. In practice, the string blob run is hundreds or thousands of entries long, versus a dozen or so for the longest spurious run.
+      </Step>
+      <Step title="Carve blob boundaries using null sequences">
+        With a confirmed mid-point inside the string blob, FLOSS searches outward in both directions for the four-byte null sequence `00 00 00 00`, which the Go compiler uses as a separator between the string blob and adjacent data. These null boundaries define the start and end of the blob.
+
+        <Note>
+        FLOSS uses a four-byte null (`00 00 00 00`) rather than a single null byte because some Go binaries contain embedded non-UTF-8 data that includes `00 00`, which would produce false boundaries with a smaller needle.
+        </Note>
+      </Step>
+      <Step title="Extract the string blob">
+        FLOSS reads the complete blob region from the binary into memory for splitting in the next step.
+      </Step>
+      <Step title="Split the blob using cross-references">
+        Individual strings within the blob are separated by finding all code and data references (cross-references) into the blob region. FLOSS collects two kinds of cross-references:
+        - **Struct string pointers**: addresses from valid `struct String` instances whose `address` field points into the blob
+        - **LEA instruction targets**: addresses loaded via `lea` instructions in executable sections
+
+        These cross-references mark the start address of each individual string. FLOSS sorts the reference list, then slices the blob at each consecutive pair of addresses to recover individual strings. Slices that cannot be decoded as valid UTF-8 are discarded.
+      </Step>
+    </Steps>
+
+    In addition to the string blob, FLOSS also recovers **Go stack strings** — strings assembled inline by the compiler for comparison operations — by scanning executable sections for characteristic instruction patterns such as `mov rdx, <8-byte literal>` followed by `cmp [rax], rdx`.
+  </Tab>
+  <Tab title="Technical details">
+    <AccordionGroup>
+      <Accordion title="Struct String layout">
+        In Go, the built-in `string` type is defined as:
+
+        ```
+        type string string
+        // The set of all strings of 8-bit bytes, conventionally but not
+        // necessarily representing UTF-8-encoded text. A string may be
+        // empty, but not nil. Values of string type are immutable.
+        ```
+
+        At the binary level, a string value is a two-field struct: a pointer to the underlying byte array and an integer length. FLOSS locates these structs by scanning for `(pointer, length)` pairs where the pointer falls within a known data section and the length is plausible.
+      </Accordion>
+      <Accordion title="Monotonically increasing run algorithm">
+        The `find_longest_monotonically_increasing_run` function in `go/extract.py` iterates over a list of candidate struct string lengths and tracks the longest contiguous subsequence where each value is greater than or equal to the previous value. For example:
+
+        ```
+        [4, 4, 1, 2, 3, 0, 0] → run from index 2 to 4 (values: 1, 2, 3)
+        ```
+
+        The function returns the start and end indices of the winning run. FLOSS then picks the midpoint of that run to anchor its null-boundary search, avoiding any junk data that might appear at the edges of the blob.
+      </Accordion>
+      <Accordion title="Validation of struct String reads">
+        Before trusting a candidate string, FLOSS validates three properties:
+        1. The bytes at the given address decode as valid UTF-8.
+        2. Re-encoding the decoded string produces the identical bytes (guards against length field errors).
+        3. The byte immediately following the string is **not** `\x00`, because Go strings in the blob are not null-terminated.
+
+        Any candidate failing these checks is discarded.
+      </Accordion>
+      <Accordion title="Known limitations">
+        The Go extraction algorithm relies on strings being stored in length-sorted order. If the compiler optimization changes or strings are inlined as constants, FLOSS may miss some entries. When the algorithm detects that the recovered size of consecutive strings decreases unexpectedly, it logs a warning that a string may have been missed.
+      </Accordion>
+    </AccordionGroup>
+  </Tab>
+</Tabs>
+
+## Rust string extraction
+
+<Tabs>
+  <Tab title="Algorithm">
+    Rust binaries store string data in the `.rdata` (read-only data) section. Like Go, Rust strings are not null-terminated and may appear as large merged blobs when extracted naively. FLOSS uses data and code cross-references to locate the boundaries between individual strings.
+
+    FLOSS recovers Rust strings in three steps:
+
+    <Steps>
+      <Step title="Extract all UTF-8 strings from .rdata">
+        FLOSS reads the entire `.rdata` section and extracts all contiguous UTF-8-encoded byte sequences meeting the minimum length threshold. At this stage, adjacent Rust strings appear as single long strings with no visible boundary between them.
+      </Step>
+      <Step title="Identify substring boundaries via references">
+        FLOSS collects all data and code references that point into the `.rdata` section:
+        - **Struct string candidate addresses**: pointers from `(address, length)` pairs identified in data sections
+        - **LEA instruction targets**: addresses loaded by `lea` instructions in executable code (both x86 and x86-64)
+        - **MOV and PUSH targets** (x86 only): immediate values passed via `mov` or `push` that resolve to `.rdata` addresses
+
+        Each reference address marks a location where a new string starts within the `.rdata` blob.
+      </Step>
+      <Step title="Split merged strings at reference boundaries">
+        For each reference address that falls inside an already-recovered string, FLOSS splits that string at the reference boundary. The left portion becomes one string; the right portion becomes another. Both parts must meet the minimum length threshold to be retained. This process is applied iteratively until all reference boundaries have been processed.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Technical details">
+    <AccordionGroup>
+      <Accordion title="Reference types used for boundary detection">
+        On x86-64 Rust binaries, FLOSS uses `lea` instructions and struct string candidate addresses to find boundaries. On x86 (32-bit) binaries, FLOSS additionally uses `push` instructions and `mov` instructions with immediate operands, because 32-bit code more frequently embeds absolute addresses directly as instruction immediates rather than using RIP-relative `lea`.
+      </Accordion>
+      <Accordion title="Wide string handling">
+        FLOSS uses the `binary2strings` library to extract strings from the `.rdata` buffer. In some cases, that library misidentifies UTF-8 regions as wide (UTF-16LE) strings. FLOSS applies a fixup pass: any wide string whose UTF-16LE encoding starts with `\x00` is re-extracted starting one byte later, and the result replaces the original wide string entry.
+      </Accordion>
+      <Accordion title="Split operation">
+        The `split_strings` function in `rust/extract.py` modifies the string list in place. When a reference address falls strictly inside an existing string's range (`string.offset < address < string.offset + len(string.string)`), the function:
+        1. Creates a left fragment from `string[0 : address - string.offset]`
+        2. Creates a right fragment from `string[address - string.offset :]`
+        3. Appends both fragments if they meet the minimum length
+        4. Removes the original merged string from the list
+      </Accordion>
+    </AccordionGroup>
+  </Tab>
+</Tabs>
+
+<Tip>
+If FLOSS produces unexpected results for a Go or Rust binary — for example, very few strings or strings with garbled content — try running with `--verbose` to see which language was detected and whether the string blob was located successfully. You can also force a specific language with `--language go` or `--language rust` to rule out detection errors.
+</Tip>

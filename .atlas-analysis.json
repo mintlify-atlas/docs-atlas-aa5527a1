@@ -1,0 +1,94 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "FLARE FLOSS",
+  "projectDescription": "A command-line tool that automatically extracts and deobfuscates strings from malware binaries using advanced static analysis and emulation techniques.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "usage/basic-usage",
+              "usage/string-types",
+              "usage/output-options",
+              "usage/advanced-options",
+              "usage/shellcode"
+            ]
+          },
+          {
+            "group": "How It Works",
+            "pages": [
+              "concepts/theory",
+              "concepts/language-specific-strings"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Tool Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/ida-pro",
+              "integrations/ghidra",
+              "integrations/binary-ninja",
+              "integrations/radare2",
+              "integrations/x64dbg"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/python-library",
+              "development/contributing",
+              "development/building"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automatic extraction of static ASCII and UTF-16LE strings",
+    "Stack string extraction via emulation of runtime string construction",
+    "Tight string extraction for strings decoded on the stack",
+    "Decoded string extraction by identifying and emulating decoding routines",
+    "Language-specific string extraction for Go and Rust binaries",
+    "JSON output for integration with other tools and scripts",
+    "Shellcode analysis support (32-bit and 64-bit)",
+    "Integration scripts for IDA Pro, Ghidra, Binary Ninja, Radare2, and x64dbg"
+  ],
+  "publicApiSurface": [
+    "floss <sample> — analyze a binary and extract all string types",
+    "floss --no {static,stack,tight,decoded} — disable specific string types",
+    "floss --only {static,stack,tight,decoded} — enable only specific string types",
+    "floss -j/--json — emit results as JSON",
+    "floss -l/--load — load from existing FLOSS results JSON",
+    "floss -f/--format {auto,pe,sc32,sc64} — specify input file format",
+    "floss --functions <hex_addr> — analyze specific functions only",
+    "floss -n/--minimum-length <int> — set minimum string length",
+    "floss --language {go,rust,none} — select or disable language-specific extraction",
+    "floss -v/--verbose — enable verbose output with function offsets",
+    "floss -q/--quiet — suppress formatting, print one string per line",
+    "floss --signatures <path> — provide custom FLIRT signature files",
+    "floss -L/--large-file — allow processing files larger than default size limit",
+    "ResultDocument — Pydantic dataclass representing FLOSS analysis output",
+    "StaticString, StackString, TightString, DecodedString — string result types"
+  ]
+}

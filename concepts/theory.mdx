@@ -1,0 +1,104 @@
+---
+title: "How FLOSS Extracts Obfuscated Strings from Malware"
+description: "Learn how FLOSS combines static analysis and CPU emulation to automatically recover obfuscated strings from malware binaries without executing them."
+---
+
+Malware authors obfuscate strings — filenames, registry keys, domain names, and other indicators — to resist reverse engineering. FLOSS automates the recovery of these strings by combining heuristic analysis with CPU emulation, eliminating most of the manual effort traditionally required.
+
+## Why string obfuscation exists
+
+When malware authors pack an entire binary, automated tools and sandbox environments quickly detect the packing artifacts. A subtler technique is to pack only the most sensitive resources: the strings that would expose the malware's capabilities and infrastructure.
+
+This approach, called **string obfuscation**, balances anti-analysis with stealth. The binary's overall structure resembles legitimate software, but indicators like command-and-control domains or file paths remain encrypted in memory until runtime. Techniques range from a simple single-byte XOR with a static key to RC4 encryption with a unique key per string.
+
+<Note>
+String obfuscation is specifically designed to defeat tools like `strings` and `grep`, which extract printable byte sequences directly from a binary on disk without understanding runtime behavior.
+</Note>
+
+## The problem with manual extraction
+
+Recovering obfuscated strings manually involves two equally painful approaches:
+
+1. **Reimplementing the decoder** — study the decryption routine, understand its logic, then rewrite it in a scripting language. This is tedious and error-prone, and must be repeated for every unique decoding scheme.
+2. **Instrumenting a debugger** — force the malware to decode strings at runtime by setting breakpoints at hundreds of call sites. This is complex and risks triggering anti-debug or anti-sandbox checks.
+
+Both approaches require significant analyst time and deep familiarity with the specific sample under analysis.
+
+## How FLOSS solves it
+
+FLOSS automates the best parts of each manual approach using **static analysis** (no execution required) combined with **CPU emulation** (no live malware process). It uses heuristics to identify likely decoding routines, extracts the arguments passed to those routines, emulates their execution, and then diffs memory before and after to find what changed.
+
+<Tip>
+Because FLOSS uses emulation rather than native execution, you can safely analyze malware samples without risking infection or triggering anti-sandbox checks.
+</Tip>
+
+## The eight-step algorithm
+
+FLOSS applies the following algorithm to extract decoded strings from a binary:
+
+<Steps>
+  <Step title="Analyze control flow">
+    FLOSS disassembles the binary and builds a control flow graph, identifying all functions and basic blocks. This structural map is the foundation for every subsequent step.
+  </Step>
+  <Step title="Find potential decoding routines">
+    FLOSS applies heuristics to score each function as a candidate decoding routine. Signals include block count, instruction count, number of cross-references, and the presence of loops. Library functions and thunks are skipped automatically.
+  </Step>
+  <Step title="Brute-force emulate code paths">
+    For each candidate function, FLOSS drives a CPU emulator across all reachable code paths among basic blocks and functions. This full-coverage pass populates the emulator state with realistic register and memory values.
+  </Step>
+  <Step title="Snapshot emulator state">
+    At each function call site encountered during emulation, FLOSS captures a snapshot of the CPU state — registers and memory — immediately before the call. These snapshots represent the calling context for a candidate decoding routine.
+  </Step>
+  <Step title="Extract arguments to decoder functions">
+    From the emulator snapshots, FLOSS extracts the arguments that would be passed to a candidate decoding routine. This gives FLOSS the encrypted buffer, the key, the length, and any other parameters the routine expects.
+  </Step>
+  <Step title="Emulate decoder functions">
+    FLOSS re-runs the emulator, this time executing each candidate decoding routine with the extracted arguments and the captured CPU state. Emulation is bounded to a maximum instruction count (defaulting to 20,000, tuned to handle routines as complex as RC4 decryption of "Hello, world!") to prevent infinite loops.
+  </Step>
+  <Step title="Diff memory states">
+    After emulation, FLOSS compares the memory snapshot taken before the routine ran against the memory state after it returned. Any regions that changed — on the stack, in global memory, or on the heap — are recorded as candidates for decoded string data.
+  </Step>
+  <Step title="Extract human-readable strings from diffs">
+    FLOSS scans the changed memory regions for sequences of human-readable characters meeting a minimum length threshold. Strings that were already visible in the binary as static strings are filtered out, so only newly decoded content appears in the results.
+  </Step>
+</Steps>
+
+## The four string types
+
+FLOSS recognizes and separately handles four categories of strings. Each category reflects a different technique malware authors use to hide data.
+
+### Static strings
+
+Static strings are raw byte sequences stored directly in the binary's data sections. They require no execution to read. A simple `strings` pass can find them, but malware authors specifically avoid storing sensitive indicators this way.
+
+FLOSS extracts static strings as a baseline. This serves two purposes: it gives analysts a complete picture of all visible strings in the binary, and it lets FLOSS filter static strings out of emulation results to avoid false positives.
+
+### Stack strings
+
+Stack strings are assembled character by character — or word by word — at runtime, directly on the stack, using a sequence of `mov` instructions. Because the string never exists as a contiguous sequence in the binary's data sections, static extraction tools miss it entirely.
+
+FLOSS detects stack strings by monitoring emulation of each function. It looks for basic blocks containing a minimum number of `mov` instructions writing to stack offsets. When a basic block meeting that threshold completes, FLOSS snapshots the stack frame and scans it for readable strings.
+
+<Accordion title="Stack string detection heuristic">
+The `StackstringContextMonitor` in `stackstrings.py` counts `mov` instructions that write to stack-relative memory operands (`i386SibOper` or `i386RegMemOper`). A basic block must accumulate at least five such instructions (`MIN_NUMBER_OF_MOVS = 5`) before FLOSS captures a context snapshot. This threshold reduces noise from ordinary function prologues and epilogues.
+</Accordion>
+
+### Tight strings
+
+Tight strings are a specialized form of stack strings. The bytes are first placed on the stack, then modified in a **tight loop** — a short loop that iterates over each character, typically applying a simple transformation like XOR or addition.
+
+FLOSS handles tight strings with a hybrid approach: it first emulates a single path through the function to reach the start of the tight loop (capturing any pre-existing stack content to avoid false positives), then uses a separate emulator driver to run the loop to completion. Diffing the pre-loop and post-loop stack frames reveals the decoded string.
+
+<Accordion title="Tight loop identification">
+FLOSS identifies functions that contain tight loops during the feature-extraction phase in `identify.py`. A `TightFunction` feature is assigned when a function's control flow graph contains a small, self-referencing cycle with characteristics consistent with a character-level transformation loop. Only these pre-screened functions are passed to the tight string extractor, keeping analysis fast.
+</Accordion>
+
+### Decoded strings
+
+Decoded strings are the most general case: ciphertext stored anywhere in the binary (data sections, resources, embedded blobs), decrypted by a dedicated function at runtime. The decoding function may use any algorithm — XOR, RC4, AES, custom schemes — with the key supplied as an argument.
+
+FLOSS recovers decoded strings through the full eight-step algorithm above. The memory diff step is critical here: because the decoded bytes appear in a region that was previously ciphertext (or zeros), the diff reliably isolates the decrypted output regardless of where in memory it lands.
+
+<Note>
+FLOSS uses a shortcut heuristic for decoded strings: if a candidate decoding function has been called many times but has produced very few valid strings after emulating a threshold fraction of those calls, FLOSS stops emulating that function early. This keeps analysis time bounded on binaries with many call sites to non-decoding routines.
+</Note>

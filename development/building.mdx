@@ -1,0 +1,142 @@
+---
+title: 'Building FLOSS Standalone Executables with PyInstaller'
+description: 'Package FLOSS into a self-contained binary using PyInstaller. Covers build system setup, the floss.spec file, versioning, and output distribution.'
+---
+
+FLOSS can be packaged into a single standalone executable that includes the Python interpreter, all dependencies, and embedded FLIRT signatures. The result runs on a target machine without any Python installation.
+
+This is how Mandiant produces the official release binaries you can download from the [FLOSS releases page](https://github.com/mandiant/flare-floss/releases).
+
+<Note>
+Build dependencies are pinned separately from development dependencies. The `[build]` optional dependency group in `pyproject.toml` locks `pyinstaller==6.14.2`, `setuptools==82.0.1`, and `build==1.4.0` to ensure reproducible release artifacts.
+</Note>
+
+## Build prerequisites
+
+Before building, make sure you have:
+
+- Python >= 3.10
+- FLOSS installed from source in a local checkout (see [Contributing](/development/contributing))
+- The `requirements.txt` dependencies installed
+
+## Building the executable
+
+<Steps>
+
+<Step title="Install PyInstaller">
+Install PyInstaller into your active Python environment:
+
+```bash
+pip install pyinstaller
+```
+
+Alternatively, install the pinned version from the build extras declared in `pyproject.toml`:
+
+```bash
+pip install -e /local/path/to/src[build]
+```
+
+This installs `pyinstaller==6.14.2` along with `setuptools` and `build`, matching the exact versions used in CI.
+</Step>
+
+<Step title="Run PyInstaller with the FLOSS spec file">
+Build the standalone executable using the spec file maintained in the repository:
+
+```bash
+pyinstaller .github/pyinstaller/floss.spec
+```
+
+The `.spec` file tells PyInstaller exactly which modules, data files (including embedded FLIRT signatures), and hidden imports to bundle. Always use this spec file rather than running PyInstaller directly on `floss/main.py`, so that signatures and resources are included correctly.
+
+<Warning>
+Build from the root of the repository checkout, not from a subdirectory. The spec file uses paths relative to the repo root.
+</Warning>
+</Step>
+
+<Step title="Locate the output binary">
+PyInstaller writes the finished executable to the `dist/` directory:
+
+```bash
+ls dist/
+# floss      (Linux / macOS)
+# floss.exe  (Windows)
+```
+
+Test the build by running it directly:
+
+```bash
+./dist/floss --help
+```
+</Step>
+
+<Step title="Distribute the executable">
+Copy the single file from `dist/` to wherever you need it — no installer required:
+
+```bash
+# Example: copy to a shared directory
+cp ./dist/floss /path/to/tools/
+
+# Or on Windows:
+copy dist\floss.exe C:\tools\
+```
+
+<Note>
+**macOS Gatekeeper:** On macOS Catalina or later, Gatekeeper blocks unsigned executables by default. After the first failed attempt to run the binary, go to **System Preferences → Security & Privacy → General** and approve the application.
+</Note>
+</Step>
+
+</Steps>
+
+## How the build system works
+
+### Versioning with setuptools-scm
+
+FLOSS uses `setuptools-scm` to derive its version string automatically from git tags. The version is defined in `floss/version.py` and referenced by `pyproject.toml`:
+
+```toml
+[tool.setuptools.dynamic]
+version = {attr = "floss.version.__version__"}
+```
+
+This means the version embedded in the standalone binary matches the git tag of the commit it was built from. There is no manually maintained version number.
+
+### pyproject.toml build configuration
+
+The build system is declared entirely in `pyproject.toml`:
+
+```toml
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+```
+
+The `floss` command-line entry point is registered as a console script:
+
+```toml
+[project.scripts]
+floss = "floss.main:main"
+```
+
+This maps the `floss` command to the `main()` function in `floss/main.py`. When you install FLOSS with `pip install flare-floss`, pip creates a `floss` wrapper script that calls this function. PyInstaller uses the same entry point when building the standalone binary.
+
+### Package contents
+
+setuptools is configured to include the main package and its embedded signatures:
+
+```toml
+[tool.setuptools]
+packages = ["floss", "floss.sigs"]
+```
+
+The `floss.sigs` sub-package contains the FLIRT signature files (`.sig`/`.pat`) that FLOSS uses to identify library functions and exclude them from analysis. PyInstaller bundles these alongside the Python code so the standalone binary is fully self-contained.
+
+## Building a source distribution
+
+To build a standard Python source distribution or wheel (for publishing to PyPI or internal registries), use the `build` tool:
+
+```bash
+pip install build
+python -m build
+```
+
+Output is placed in `dist/` as `.tar.gz` and `.whl` files.

@@ -1,0 +1,57 @@
+---
+title: "Binary Ninja Integration: Import FLOSS String Results"
+description: "Generate a Binary Ninja Python script from FLOSS JSON output to annotate your BNDB workspace with decoded, stack, and tight strings recovered from malware."
+---
+
+The `render-binja-import-script.py` script translates a FLOSS JSON result document into a Binary Ninja Python script. Running the generated script inside Binary Ninja adds comments at code references for decoded strings and at function entries for stack and tight strings, giving you FLOSS's recovered strings directly in your disassembly.
+
+## Workflow
+
+<Steps>
+  <Step title="Run FLOSS and save JSON output">
+    Run FLOSS on the target binary with the `-j` flag and redirect the output to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Generate the Binary Ninja script">
+    Pass the JSON file to `render-binja-import-script.py` and redirect the output to a `.py` file.
+
+    ```bash
+    python render-binja-import-script.py floss_results.json > apply_floss.py
+    ```
+
+    The generated script imports `binaryninja` and uses the `bv` (BinaryView) variable that Binary Ninja's scripting environment provides automatically.
+  </Step>
+  <Step title="Open the binary in Binary Ninja">
+    Open the same binary in Binary Ninja and wait for analysis to complete.
+  </Step>
+  <Step title="Run the script in Binary Ninja">
+    In Binary Ninja, open the **Script Console** (via **View → Script Console** or the console icon) and run the script. You can paste the script contents directly into the console, or use **Tools → Run Script...** to load `apply_floss.py` from disk.
+
+    The script prints progress to the console output as it applies each annotation.
+  </Step>
+  <Step title="Review the annotations">
+    FLOSS strings appear as function comments in the disassembly view. Hover over an annotated address to see the recovered string.
+  </Step>
+</Steps>
+
+## Annotation behavior
+
+The generated script defines two helper functions that Binary Ninja's API uses to place comments:
+
+| String type | Annotation location |
+|---|---|
+| Decoded string (global address) | Comment at all code references (`get_code_refs`) to the global address |
+| Decoded string (decoded at call site) | Comment at all code references to the decode call address |
+| Stack string | Comment at the function entry address (`fva`) |
+| Tight string | Comment at the function address where the tight loop was identified |
+
+<Note>
+  Binary Ninja does not have a native stack variable comment API. Stack strings and tight strings are therefore annotated at the function entry point rather than on an individual local variable. The comment text is prefixed with `FLOSS stackstring:` or `FLOSS tightstring:` so you can distinguish them from decoded string annotations.
+</Note>
+
+<Tip>
+  The script skips duplicate comments. If a recovered string is already present in an existing comment at a given address, it is not added again.
+</Tip>

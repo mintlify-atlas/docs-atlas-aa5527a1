@@ -1,97 +1,78 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "FLOSS: Automated Obfuscated String Extraction Tool"
+description: "FLARE FLOSS automatically extracts and deobfuscates strings from malware binaries using static analysis and emulation. A drop-in replacement for strings.exe."
 ---
 
-## Setting up
+FLOSS (FLARE Obfuscated String Solver) is an open-source tool from Mandiant's FLARE team that goes beyond traditional string extraction. While `strings.exe` only finds plaintext strings, FLOSS uses advanced static analysis and CPU emulation to automatically recover strings that malware deliberately hides — including stack strings, tight strings, and cryptographically decoded strings.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Download standalone binaries or install via pip. Get FLOSS running on Windows, macOS, or Linux.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first analysis in under a minute. Extract all string types from a malware sample.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Usage Guide" icon="terminal" href="/usage/basic-usage">
+    Master all CLI flags: filter string types, set minimum length, output JSON, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="How It Works" icon="microscope" href="/concepts/theory">
+    Understand the static analysis and emulation algorithms behind FLOSS's string recovery.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What FLOSS extracts
 
-Everything you need to create world-class documentation.
+FLOSS identifies and recovers four distinct categories of strings that malware uses to hide indicators of compromise:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Static strings" icon="file-lines">
+    Classic ASCII and UTF-16LE strings embedded in the binary — the same strings `strings.exe` finds. FLOSS provides a baseline that everything else is compared against.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Stack strings" icon="layer-group">
+    Strings assembled character-by-character on the stack at runtime. FLOSS emulates function execution to reconstruct them without running the malware.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Tight strings" icon="arrows-spin">
+    A specialized form of stack strings decoded through tight loops. FLOSS handles these separately using loop-aware emulation to avoid false positives.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Decoded strings" icon="key">
+    Strings encrypted in global memory or on the heap that are decrypted by dedicated decoding functions. FLOSS identifies decoders via heuristics and emulates them.
   </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Language-aware extraction
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+FLOSS automatically detects Go and Rust binaries, where strings are stored in non-NULL-terminated formats that confuse standard tools. For these languages, FLOSS applies language-specific algorithms to reconstruct strings as they appear in the original source code.
+
+<CardGroup cols={2}>
+  <Card title="Go string extraction" icon="code" href="/concepts/language-specific-strings">
+    Handles Go's struct String format and length-sorted string blobs.
+  </Card>
+  <Card title="Rust string extraction" icon="gear" href="/concepts/language-specific-strings">
+    Analyzes data and code references to split concatenated Rust string data.
+  </Card>
+</CardGroup>
+
+## Integrate with your tools
+
+FLOSS outputs JSON that integrates directly with the reverse engineering tools you already use.
+
+<CardGroup cols={3}>
+  <Card title="IDA Pro" icon="plug" href="/integrations/ida-pro">
+    IDAPython plugin and import script
+  </Card>
+  <Card title="Ghidra" icon="plug" href="/integrations/ghidra">
+    Python script to apply FLOSS results
+  </Card>
+  <Card title="Binary Ninja" icon="plug" href="/integrations/binary-ninja">
+    Import script for annotation
+  </Card>
+  <Card title="Radare2" icon="plug" href="/integrations/radare2">
+    r2 command import script
+  </Card>
+  <Card title="x64dbg" icon="plug" href="/integrations/x64dbg">
+    JSON database import
+  </Card>
+  <Card title="Python API" icon="python" href="/development/python-library">
+    Use FLOSS as a library in your scripts
+  </Card>
+</CardGroup>

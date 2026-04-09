@@ -1,0 +1,55 @@
+---
+title: "FLARE FLOSS: Automatic Obfuscated String Extraction"
+description: "Learn how FLOSS goes beyond strings.exe to extract stack strings, tight strings, and decoded strings from malware binaries using static analysis."
+---
+
+FLOSS (FLARE Obfuscated String Solver) is an open-source tool from Mandiant's FLARE team that automatically extracts and deobfuscates strings from malware binaries. You can use it as a drop-in replacement for `strings.exe` — but unlike standard string utilities, FLOSS applies advanced static analysis and CPU emulation to recover strings that malware deliberately hides.
+
+## The problem with strings.exe
+
+Many malware authors don't rely on heavy packers to evade detection. Instead, they obfuscate only the most sensitive parts of a binary — the strings and resources that reveal command-and-control domains, file paths, registry keys, and infection artifacts. These obfuscated strings don't appear as plaintext in `strings.exe` output, leaving analysts with an incomplete picture during basic static analysis.
+
+FLOSS bridges this gap. It runs the same baseline string extraction as `strings.exe`, then goes further by emulating function execution to reconstruct strings that are built at runtime.
+
+## What FLOSS extracts
+
+FLOSS identifies and recovers four distinct categories of strings:
+
+<CardGroup cols={2}>
+  <Card title="Static strings" icon="file-lines">
+    Classic ASCII and UTF-16LE strings embedded in the binary — the same strings `strings.exe` finds. FLOSS provides these as a baseline alongside the strings only it can recover.
+  </Card>
+  <Card title="Stack strings" icon="layer-group">
+    Strings assembled character-by-character onto the stack at runtime. FLOSS emulates function execution to reconstruct these strings without executing the malware.
+  </Card>
+  <Card title="Tight strings" icon="arrows-spin">
+    A specialized form of stack strings decoded through tight loops. FLOSS handles these separately with loop-aware emulation to minimize false positives.
+  </Card>
+  <Card title="Decoded strings" icon="key">
+    Strings encrypted or encoded in global memory or on the heap, decrypted by dedicated decoding functions. FLOSS identifies candidate decoder functions via heuristics and emulates them to recover the plaintext.
+  </Card>
+</CardGroup>
+
+## Language-specific string extraction
+
+Not all compilers store strings in the NULL-terminated ASCII or UTF-16LE formats that standard tools expect. FLOSS automatically detects and applies language-specific extraction for binaries compiled from the following languages:
+
+- **Go** — Handles Go's `struct String` format and length-prefixed string blobs that lack NULL terminators
+- **Rust** — Analyzes data and code references to split concatenated string data stored in the `.rdata` section
+
+The strings FLOSS extracts using language-specific algorithms are significantly easier for analysts to inspect than what standard tools produce.
+
+<Note>
+  For Go and Rust binaries, FLOSS will prompt you before running string deobfuscation, since the process can take considerably longer for these binaries. You can skip the prompt by passing `--only static` or by using `--only stack tight decoded`.
+</Note>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Download the standalone binary or install via pip. No Python environment required for the standalone build.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first FLOSS analysis in under a minute and understand the output.
+  </Card>
+</CardGroup>

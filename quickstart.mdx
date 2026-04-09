@@ -1,80 +1,134 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart: Run FLOSS and Extract Malware Strings"
+description: "Learn how to extract obfuscated strings from a malware binary with FLOSS in a few simple steps, from installation to your first results."
 ---
 
-## Get started in three steps
+FLOSS works like `strings.exe`, but goes further by automatically recovering strings that malware hides through stack construction, tight loops, and decoding functions. This guide walks you through running your first analysis and interpreting the output.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install FLOSS">
+    Download the standalone binary for your platform from the [releases page](https://github.com/mandiant/flare-floss/releases). No installation required — just download and run.
 
-### Step 1: Set up your local environment
+    Alternatively, install via pip (requires Python 3.10+):
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    pip install flare-floss
+    ```
 
-### Step 2: Deploy your changes
+    Verify the installation:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    floss --version
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Run your first analysis">
+    Point FLOSS at any PE or ELF binary. FLOSS extracts all four string types by default:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    floss malware.exe
+    ```
 
-### Step 3: Go live
+    FLOSS outputs results grouped by string type:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```
+    +--------------------------+
+    | FLOSS STATIC STRINGS (42)|
+    +--------------------------+
+    CreateRemoteThread
+    VirtualAllocEx
+    WS2_32.dll
+    ...
+
+    +----------------------------+
+    | FLOSS STACK STRINGS (7)    |
+    +----------------------------+
+    cmd.exe /c del
+    ...
+
+    +-----------------------------+
+    | FLOSS DECODED STRINGS (12)  |
+    +-----------------------------+
+    http://192.168.1.100/update
+    HKCU\Software\Microsoft\Windows\Run
+    ...
+    ```
+  </Step>
+
+  <Step title="Filter string types">
+    Extract only the string types you care about using `--only`, or exclude types you don't need with `--no`.
+
+    Extract only stack and tight strings (useful when you already know the static strings):
+
+    ```bash
+    floss --only stack tight -- suspicious.exe
+    ```
+
+    Skip static strings to focus on decoded/obfuscated content:
+
+    ```bash
+    floss --no static -- backdoor.exe
+    ```
+
+    <Note>
+      The double dash (`--`) is required to separate the multi-value flag from the filename. `--no` and `--only` cannot be used together.
+    </Note>
+  </Step>
+
+  <Step title="Export results as JSON">
+    Use `-j` to emit structured JSON output for scripting or tool integration:
+
+    ```bash
+    floss -j malware.exe > results.json
+    ```
+
+    The JSON output contains a `ResultDocument` with `metadata`, `analysis`, and `strings` sections. You can load these results back later without re-running the analysis:
+
+    ```bash
+    floss --load results.json
+    ```
+  </Step>
+
+  <Step title="View all available options">
+    Show the most commonly used arguments:
+
+    ```bash
+    floss -h
+    ```
+
+    Show all supported arguments including advanced options:
+
+    ```bash
+    floss -H
+    ```
+  </Step>
+</Steps>
+
+## Common use cases
+
+| Goal | Command |
+|------|---------|
+| Full analysis (all string types) | `floss malware.exe` |
+| Only decoded/obfuscated strings | `floss --only decoded -- malware.exe` |
+| Skip static strings | `floss --no static -- malware.exe` |
+| JSON output for scripting | `floss -j malware.exe > out.json` |
+| Analyze 32-bit shellcode | `floss -f sc32 shellcode.bin` |
+| Minimum string length 8 | `floss -n 8 malware.exe` |
+| Quiet mode (one string per line) | `floss -q malware.exe` |
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Usage guide" icon="terminal" href="/usage/basic-usage">
+    Learn all CLI flags and options in detail.
+  </Card>
+  <Card title="String types explained" icon="layer-group" href="/usage/string-types">
+    Understand when to use --no and --only.
+  </Card>
+  <Card title="JSON output options" icon="code" href="/usage/output-options">
+    Export and reload FLOSS results for scripting.
+  </Card>
+  <Card title="Tool integrations" icon="plug" href="/integrations/overview">
+    Apply FLOSS results in IDA Pro, Ghidra, and more.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

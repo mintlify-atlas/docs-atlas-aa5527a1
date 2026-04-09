@@ -1,0 +1,162 @@
+---
+title: 'Contributing to FLARE FLOSS: Dev Environment Setup'
+description: 'Set up a local FLOSS development environment, configure pre-commit hooks for black, isort, and mypy, and run the test suite with pytest.'
+---
+
+FLOSS welcomes contributions. This page walks you through cloning the repository, installing dependencies, configuring code quality tools, and running the test suite before you open a pull request.
+
+<Note>FLOSS requires **Python >= 3.10**. All development and testing dependencies are pinned in `requirements.txt` to ensure reproducible environments across contributors.</Note>
+
+## Setting up your development environment
+
+<Steps>
+
+<Step title="Clone the repository with submodules">
+FLOSS uses a git submodule to separate source code from test data. Clone with `--recurse-submodules` to fetch both at once:
+
+<CodeGroup>
+
+```bash HTTPS
+git clone --recurse-submodules https://github.com/mandiant/flare-floss.git /local/path/to/src
+```
+
+```bash SSH
+git clone --recurse-submodules git@github.com:mandiant/flare-floss.git /local/path/to/src
+```
+
+</CodeGroup>
+
+If you already cloned without submodules, initialize them manually:
+
+```bash
+cd /local/path/to/src
+git submodule update --init tests/data
+```
+</Step>
+
+<Step title="Install pinned dependencies">
+Install the exact dependency versions used by all FLOSS contributors. Do this **before** installing the FLOSS package itself:
+
+```bash
+pip install -r requirements.txt
+```
+
+These versions are pinned in `requirements.txt` and match what runs in CI. Using them ensures that bugs you reproduce locally will behave the same way in automated checks.
+</Step>
+
+<Step title="Install FLOSS in editable mode">
+Install the local source tree in editable mode so that any file changes are reflected immediately without reinstalling:
+
+```bash
+pip install -e /local/path/to/src[dev]
+```
+
+The `[dev]` extra installs all development and testing tools, including `pytest`, `black`, `isort`, `mypy`, and `pre-commit`.
+
+<Tip>
+If you see `ERROR: Project has a 'pyproject.toml' and its build backend is missing the 'build_editable' hook`, upgrade pip and setuptools:
+
+```bash
+pip install --upgrade pip setuptools
+```
+</Tip>
+</Step>
+
+<Step title="Install pre-commit hooks">
+FLOSS uses [pre-commit](https://pre-commit.com/) to run the same linters locally as in CI. Install the hooks for both the commit and push stages:
+
+```bash
+pre-commit install --hook-type pre-commit
+pre-commit install --hook-type pre-push
+```
+
+With these hooks in place, `isort`, `black`, and `mypy` run automatically before every `git commit` and `git push`. You can skip them temporarily with `git commit -n` (`--no-verify`), but all checks must pass before a pull request is merged.
+</Step>
+
+</Steps>
+
+## Code style and formatting
+
+FLOSS enforces consistent style with three tools, all configured in `.pre-commit-config.yaml`:
+
+| Tool | Purpose | Configuration |
+|------|---------|---------------|
+| **isort** | Sorts and groups import statements | `--length-sort --profile black --line-length=120` |
+| **black** | Formats code with a consistent style | `--line-length=120` |
+| **mypy** | Checks static type annotations | `--check-untyped-defs`, config in `.github/mypy/mypy.ini` |
+
+### Running linters manually
+
+Run all linters across the entire codebase at once:
+
+```bash
+pre-commit run --all-files
+```
+
+Run a single linter by name:
+
+```bash
+pre-commit run --all-files isort
+pre-commit run --all-files black
+pre-commit run --all-files mypy
+```
+
+Expected output when everything passes:
+
+```text
+isort....................................................................Passed
+black....................................................................Passed
+mypy.....................................................................Passed
+```
+
+<Warning>
+mypy checks the `floss/`, `scripts/`, and `tests/` directories. Type errors in any of these will fail CI. Run `pre-commit run --all-files mypy` locally before pushing to catch these early.
+</Warning>
+
+## Running tests
+
+FLOSS uses [pytest](https://docs.pytest.org/) for its test suite. Run all tests from the repository root:
+
+```bash
+pytest tests/
+```
+
+For verbose output that prints each test name as it runs:
+
+```bash
+pytest --verbose tests/
+```
+
+<Note>
+The test suite relies on binary test fixtures in `tests/data/`, which is a git submodule. If tests fail with missing fixture errors, make sure you initialized the submodule in step 1.
+</Note>
+
+## Project structure reference
+
+```
+flare-floss/
+├── floss/               # Main package source
+│   ├── main.py          # CLI entry point and main() function
+│   ├── results.py       # ResultDocument data model
+│   ├── strings.py       # Static string extraction
+│   ├── stackstrings.py  # Stack string extraction
+│   ├── tightstrings.py  # Tight string extraction
+│   ├── string_decoder.py # Decoded string emulation
+│   └── language/        # Language-specific extractors (Go, Rust)
+├── tests/               # Test suite
+│   └── data/            # Binary test fixtures (git submodule)
+├── .pre-commit-config.yaml
+├── pyproject.toml
+└── requirements.txt
+```
+
+## Opening a pull request
+
+Before submitting, confirm that all checks pass:
+
+```bash
+pre-commit run --all-files
+pytest tests/
+```
+
+Pull requests are reviewed against the `master` branch. Include a description of the change and, where relevant, reference any related issues.

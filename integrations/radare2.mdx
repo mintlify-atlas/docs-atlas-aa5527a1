@@ -1,0 +1,59 @@
+---
+title: "Radare2 Integration: Import FLOSS Strings as r2 Commands"
+description: "Generate an r2 command script from FLOSS JSON output to annotate your radare2 session with base64-encoded inline comments and renamed decoding functions."
+---
+
+The `render-r2-import-script.py` script translates a FLOSS JSON result document into a radare2 command script. Each line of the output is a native r2 command — no Python interpreter is needed inside radare2. The script uses `CCu` to attach inline comments and `Ca` to annotate stack arguments, and also renames identified decoding functions using `afn`.
+
+## Workflow
+
+<Steps>
+  <Step title="Run FLOSS and save JSON output">
+    Run FLOSS on the target binary with the `-j` flag and redirect the output to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Generate the r2 command script">
+    Pass the JSON file to `render-r2-import-script.py` and redirect the output to a `.py` file.
+
+    ```bash
+    python render-r2-import-script.py floss_results.json > apply_floss.py
+    ```
+
+    Despite the `.py` extension, the output is a sequence of r2 commands — one per line — not a Python script. Each comment is base64-encoded to handle special characters safely.
+  </Step>
+  <Step title="Open the binary in radare2">
+    Open the target binary in radare2.
+
+    ```bash
+    r2 suspicious.exe
+    ```
+  </Step>
+  <Step title="Source the script in radare2">
+    Inside radare2, source the generated script with the `.` command to execute all r2 commands in sequence.
+
+    ```bash
+    . apply_floss.py
+    ```
+  </Step>
+  <Step title="Review the annotations">
+    Use `CCl` to list all comments in the session, or navigate to annotated addresses to see the FLOSS strings inline in the disassembly. Decoding functions are renamed to `floss_<address>` and marked as analyzed functions.
+  </Step>
+</Steps>
+
+## Annotation behavior
+
+The script uses the following r2 commands to apply FLOSS results:
+
+| r2 command | Purpose |
+|---|---|
+| `CCu base64:<data> @ <addr>` | Attaches an inline comment at the given address. Comments are base64-encoded and prefixed with `"FLOSS: <string> (floss_<addr>)"`. |
+| `af @ <addr>` | Analyzes the function at the decoding routine address. |
+| `afn floss_<addr> @ <addr>` | Renames the decoding routine to `floss_<hex_address>`. Each decoding routine is analyzed and renamed only once, even if it decoded multiple strings. |
+| `Ca -0x<offset> base64:<data> @ <fva>` | Attaches a stack argument comment at the given frame offset in the function. Used for stack strings and tight strings. |
+
+<Tip>
+  Because comments are base64-encoded with `CCu base64:`, they survive round-trips through r2 project files and display correctly even when the string contains characters that would otherwise break r2 command parsing.
+</Tip>

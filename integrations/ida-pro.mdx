@@ -1,0 +1,102 @@
+---
+title: "IDA Pro Integration: FLOSS Plugin and Import Script"
+description: "Annotate your IDA Pro database with FLOSS-recovered strings using either the IDAPython plugin that runs FLOSS directly or the JSON-based import script."
+---
+
+FLOSS offers two distinct ways to bring recovered strings into IDA Pro. The **IDAPython plugin** (`idaplugin.py`) runs FLOSS's full analysis engine from inside IDA and applies the results directly to the currently loaded binary — no separate FLOSS invocation needed. The **import script** (`render-ida-import-script.py`) converts an existing FLOSS JSON result into an IDA Python script you can run in any IDA session, including on a different machine from where you ran FLOSS.
+
+<Tabs>
+  <Tab title="IDAPython plugin">
+
+The plugin runs FLOSS's string extraction pipeline — stack strings, tight strings, and decoded strings — against the binary currently loaded in IDA, then applies each result as an inline comment or stack variable annotation.
+
+**What the plugin does:**
+
+- Loads or derives a vivisect workspace from the open IDB file
+- Identifies decoding functions using FLOSS heuristics
+- Extracts stack strings and tight strings from non-tight-loop functions
+- Emulates the top decoding functions to recover decoded strings
+- Annotates each recovered string as a comment at the relevant address or stack frame offset in IDA
+
+<Steps>
+  <Step title="Download the plugin">
+    Download `idaplugin.py` from the FLOSS [scripts directory](https://github.com/mandiant/flare-floss/tree/master/scripts) on GitHub. FLOSS must also be installed from source for the plugin to import correctly.
+
+    ```bash
+    floss -j suspicious.exe > /dev/null  # verify floss is on PATH
+    ```
+  </Step>
+  <Step title="Open your binary in IDA Pro">
+    Load the target binary in IDA Pro and wait for auto-analysis to complete before running the plugin.
+  </Step>
+  <Step title="Run the plugin via Script File">
+    In IDA Pro, open **File → Script File...** (or press **Alt+F7**), then select `idaplugin.py`.
+
+    The plugin logs its progress to the IDA output window. When it finishes you will see entries such as:
+
+    ```
+    INFO:floss.idaplugin:decoded 3 stack strings
+    INFO:floss.idaplugin:decoded 1 tight strings
+    INFO:floss.idaplugin:decoded 12 strings
+    ```
+  </Step>
+  <Step title="Review the annotations">
+    FLOSS applies each string as a comment at the address where it was decoded or used. Stack strings also receive a stack variable comment on the local variable at the relevant frame offset.
+  </Step>
+</Steps>
+
+<Note>
+  The plugin sets a minimum string length of 4 characters. Strings shorter than this threshold are not annotated.
+</Note>
+
+  </Tab>
+  <Tab title="Import script">
+
+Use this method when you already have a FLOSS JSON result and want to apply it to an IDA database — for example, after running FLOSS in a separate analysis environment or via automation.
+
+The render script reads the JSON document and generates an IDA Python script that defines `AppendComment` and `AppendLvarComment` helpers, then calls them for every decoded string, stack string, and tight string in the result.
+
+<Steps>
+  <Step title="Run FLOSS and save JSON output">
+    Run FLOSS on the target binary with the `-j` flag and redirect the output to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Generate the IDA Python script">
+    Pass the JSON file to `render-ida-import-script.py` and redirect the output to a `.py` file.
+
+    ```bash
+    python render-ida-import-script.py floss_results.json > apply_floss.py
+    ```
+
+    The generated script contains base64-encoded string data to handle non-ASCII characters safely.
+  </Step>
+  <Step title="Run the script in IDA Pro">
+    Open the target binary in IDA Pro, then load the generated script via **File → Script File...** (or **Alt+F7**) and select `apply_floss.py`.
+
+    The script prints progress to the IDA output window and calls `ida_kernwin.refresh_idaview_anyway()` when it finishes to update the disassembly view.
+  </Step>
+  <Step title="Review the annotations">
+    Decoded strings appear as EOL comments at the address where each string was decoded or stored globally. Stack strings and tight strings appear as stack variable comments on the relevant local variable.
+  </Step>
+</Steps>
+
+<Tip>
+  The import script handles duplicates — if you run it more than once, it will not create repeated comments for strings that are already annotated.
+</Tip>
+
+  </Tab>
+</Tabs>
+
+## Annotation behavior
+
+Both methods apply the same annotation logic:
+
+| String type | Annotation location |
+|---|---|
+| Decoded string (global address) | Repeatable comment at the global virtual address |
+| Decoded string (decoded at call site) | Comment at the address where decoding occurs |
+| Stack string | Stack variable comment on the local variable at the frame offset, plus a comment at the `program_counter` address |
+| Tight string | Same as stack string |

@@ -1,0 +1,98 @@
+---
+title: 'Filter String Types with --no and --only in FLOSS'
+description: 'Use --no to skip specific string types and --only to extract just the ones you need. Learn when each approach saves analysis time.'
+---
+
+FLOSS extracts four string types by default: `static`, `stack`, `tight`, and `decoded`. For targeted analysis, you can skip types you don't need with `--no`, or restrict output to only the types you want with `--only`. Both flags accept multiple values and require a double-dash separator (`--`) before the binary path.
+
+## Why the double-dash separator matters
+
+Both `--no` and `--only` accept multiple arguments using `nargs="+"`. Without the `--` terminator, the argument parser may interpret the binary path as an additional type value. Always end the option list with ` -- ` before the file:
+
+```bash
+floss --no static -- malware.exe
+```
+
+## Disabling string types with --no
+
+<ParamField path="--no" type="string[]">
+  Disable extraction of the specified string type(s). Accepts one or more of: `static`, `decoded`, `stack`, `tight`. Cannot be combined with `--only`.
+</ParamField>
+
+Use `--no` when you want most types but need to skip one or two — for example, skipping static strings to focus only on obfuscated content, or skipping decoded strings on a fast first-pass triage.
+
+<Tabs>
+  <Tab title="Skip static">
+    Omit regular ASCII and UTF-16LE strings. Useful when you only care about obfuscated content and want to avoid the noise of plaintext strings.
+
+    ```bash
+    floss --no static -- malware.exe
+    ```
+  </Tab>
+  <Tab title="Skip decoded">
+    Skip the emulation-based decoded string extraction. This is the most time-consuming phase, so disabling it speeds up analysis significantly.
+
+    ```bash
+    floss --no decoded -- malware.exe
+    ```
+  </Tab>
+  <Tab title="Skip stack and tight">
+    Disable both stack string and tight string extraction in one pass. Both types are specified as separate values to the same `--no` flag.
+
+    ```bash
+    floss --no stack tight -- malware.exe
+    ```
+  </Tab>
+</Tabs>
+
+## Enabling only specific types with --only
+
+<ParamField path="--only" type="string[]">
+  Extract only the specified string type(s). Accepts one or more of: `static`, `decoded`, `stack`, `tight`. Cannot be combined with `--no`.
+</ParamField>
+
+Use `--only` when you know exactly what you want. It is cleaner than listing everything you do not want with `--no`.
+
+<Tabs>
+  <Tab title="Only decoded">
+    Extract only the strings that FLOSS decodes via emulation. This is the type most unique to FLOSS — these strings are invisible to `strings.exe`.
+
+    ```bash
+    floss --only decoded -- malware.exe
+    ```
+  </Tab>
+  <Tab title="Only stack and tight">
+    Extract only strings constructed on the stack at runtime. Combining both stack and tight captures all stack-based obfuscation patterns.
+
+    ```bash
+    floss --only stack tight -- malware.exe
+    ```
+  </Tab>
+  <Tab title="Only static">
+    Replicate the behavior of `strings.exe` — extract only raw ASCII and UTF-16LE strings with no emulation overhead.
+
+    ```bash
+    floss --only static -- malware.exe
+    ```
+  </Tab>
+</Tabs>
+
+## Combining --no and --only
+
+<Warning>
+`--no` and `--only` cannot be used together. FLOSS will exit with an error if you specify both flags in the same command.
+</Warning>
+
+Choose one approach:
+
+- Use `--no` to **exclude** a small set of types from the default full extraction.
+- Use `--only` to **include** a small set of types, discarding everything else.
+
+## String type reference
+
+| Type | Flag value | Description |
+|---|---|---|
+| Static | `static` | Raw ASCII and UTF-16LE strings from binary bytes |
+| Stack | `stack` | Strings assembled character-by-character on the stack |
+| Tight | `tight` | Stack strings decoded inside tight loops |
+| Decoded | `decoded` | Strings decrypted or deobfuscated by emulated functions |

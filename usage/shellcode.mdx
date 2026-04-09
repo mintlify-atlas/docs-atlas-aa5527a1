@@ -1,0 +1,93 @@
+---
+title: 'Shellcode Analysis: Extract Strings with -f sc32/sc64'
+description: 'Use -f sc32 or -f sc64 to extract strings from raw shellcode. FLOSS auto-detects shellcode by file extension or you can set the format explicitly.'
+---
+
+Malicious shellcode frequently uses obfuscated strings and stack-constructed strings to evade static analysis. FLOSS can analyze raw binary shellcode files directly using the `-f` / `--format` flag. All standard FLOSS options — string type filtering, output format, minimum length, and verbose mode — work the same way when analyzing shellcode.
+
+## Specifying the shellcode format
+
+FLOSS cannot infer the bitness of a raw binary from its contents alone, so you must tell it whether to treat the file as 32-bit or 64-bit shellcode.
+
+<ParamField path="-f sc32" type="string">
+  Analyze the input as 32-bit (x86) raw shellcode. FLOSS loads the binary into a shellcode workspace with `i386` architecture.
+</ParamField>
+
+<ParamField path="-f sc64" type="string">
+  Analyze the input as 64-bit (x86-64) raw shellcode. FLOSS loads the binary into a shellcode workspace with `amd64` architecture.
+</ParamField>
+
+```bash
+floss -f sc32 shellcode.bin
+floss -f sc64 shellcode.bin
+```
+
+## Automatic detection by file extension
+
+When the format is set to `auto` (the default), FLOSS checks the file extension before falling back to header magic. The following extensions trigger automatic shellcode mode:
+
+| Extension | Detected as |
+|---|---|
+| `.sc32` | 32-bit shellcode |
+| `.raw32` | 32-bit shellcode |
+| `.sc64` | 64-bit shellcode |
+| `.raw64` | 64-bit shellcode |
+
+If your file uses one of these extensions, you do not need to specify `-f` explicitly:
+
+```bash
+floss malware.sc32    # automatically treated as sc32
+floss malware.raw64   # automatically treated as sc64
+```
+
+## Examples
+
+<Steps>
+  <Step title="Analyze 32-bit shellcode">
+    Extract all string types from a raw 32-bit shellcode blob:
+
+    ```bash
+    floss -f sc32 malware.raw32
+    ```
+  </Step>
+  <Step title="Analyze 64-bit shellcode">
+    Extract all string types from a raw 64-bit shellcode blob:
+
+    ```bash
+    floss -f sc64 malware.raw64
+    ```
+  </Step>
+  <Step title="Extract only decoded strings from shellcode">
+    Combine the shellcode format flag with string type filtering to focus on emulation-decoded strings only:
+
+    ```bash
+    floss -f sc32 --only decoded -- shellcode.bin
+    ```
+  </Step>
+  <Step title="Save shellcode results as JSON">
+    Write structured JSON results to a file for downstream processing:
+
+    ```bash
+    floss -f sc64 -j shellcode.bin > shellcode_strings.json
+    ```
+  </Step>
+</Steps>
+
+<Note>
+FLOSS supports PE and ELF binaries for decoded and stack string extraction. For any other format — including raw shellcode — you must specify `-f sc32` or `-f sc64`. Attempting to analyze a raw shellcode file without the format flag will produce an error.
+</Note>
+
+## Combining with other options
+
+All other FLOSS flags work with shellcode analysis. For example, you can disable static strings, increase the minimum length, or target specific functions:
+
+```bash
+# skip static strings, focus on obfuscated content
+floss -f sc32 --no static -- shellcode.bin
+
+# increase minimum length to reduce noise
+floss -f sc64 -n 6 shellcode.bin
+
+# target a known decoding function at a specific address
+floss -f sc32 --functions 0x000010a0 shellcode.bin
+```

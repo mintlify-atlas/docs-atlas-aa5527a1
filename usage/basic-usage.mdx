@@ -1,0 +1,77 @@
+---
+title: 'Running FLOSS: Commands, Defaults, and Output Sections'
+description: 'Run FLOSS on any PE or ELF binary to extract all four string types. Understand default behavior, output sections, and how FLOSS compares to strings.exe.'
+---
+
+FLOSS works as a drop-in replacement for `strings.exe`. Point it at any executable and it automatically extracts static strings alongside obfuscated strings that standard tools miss entirely. You get four categories of results from a single command.
+
+## Running FLOSS
+
+The simplest invocation requires only the path to the binary you want to analyze:
+
+```bash
+floss malware.exe
+```
+
+FLOSS performs full analysis immediately — no flags required. You can also use `floss -h` to see the most commonly used arguments, or `floss -H` to see all supported options including advanced flags.
+
+## Default behavior
+
+By default, FLOSS extracts all four string types from the binary and uses a minimum string length of **4 characters**. Strings shorter than four characters are filtered out to reduce noise.
+
+The four string types extracted on every default run are:
+
+1. **Static strings** — "regular" ASCII and UTF-16LE strings found in the raw binary bytes, equivalent to what `strings.exe` produces
+2. **Stack strings** — strings constructed on the stack at runtime by assigning character values individually
+3. **Tight strings** — a special form of stack strings that are decoded on the stack within tight loops
+4. **Decoded strings** — strings decrypted or deobfuscated inside functions, typically found in global memory or on the heap
+
+<Note>
+FLOSS always extracts static strings internally, even when you disable them in the output — static strings are required for language identification (Go, Rust, etc.).
+</Note>
+
+## Output sections
+
+FLOSS organizes its output into labeled sections, one per string type. Each section lists the recovered strings along with contextual metadata. When you run in default mode, you see all four sections in sequence:
+
+```
+FLOSS STATIC STRINGS
+====================
+...
+
+FLOSS STACK STRINGS
+===================
+...
+
+FLOSS TIGHT STRINGS
+===================
+...
+
+FLOSS DECODED STRINGS
+=====================
+...
+```
+
+Use `-v` / `--verbose` to include additional metadata such as function offsets and encoding information. Use `-q` / `--quiet` to suppress section headers and emit one string per line — useful when piping output to `grep` or other tools.
+
+## FLOSS vs strings.exe
+
+FLOSS is designed as a superset of `strings.exe`. The key differences:
+
+| Capability | strings.exe | FLOSS |
+|---|---|---|
+| Static ASCII strings | Yes | Yes |
+| Static UTF-16LE strings | Yes | Yes |
+| Stack-constructed strings | No | Yes |
+| Decoded/decrypted strings | No | Yes |
+| Language-specific strings (Go, Rust) | No | Yes |
+
+Because FLOSS covers everything `strings.exe` does and more, you can substitute FLOSS into your existing analysis workflow without losing any static string coverage.
+
+<Tip>
+For malware written in Go or Rust, FLOSS automatically detects the language and applies language-specific string extraction that produces cleaner, more human-readable results than raw static string scanning.
+</Tip>
+
+## Next steps
+
+To control which string types FLOSS extracts, see [String types](/usage/string-types).

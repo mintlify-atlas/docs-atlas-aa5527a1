@@ -1,0 +1,173 @@
+---
+title: 'FLOSS Output Options: JSON, Verbose, Quiet, and More'
+description: 'Control how FLOSS formats and renders results with JSON output, verbose mode, quiet mode, color settings, and minimum string length.'
+---
+
+FLOSS offers several flags that control how results are formatted and displayed. You can emit structured JSON for scripting, suppress headers for piped workflows, increase detail for deeper inspection, or tune the minimum string length to filter noise.
+
+## JSON output (-j / --json)
+
+<ParamField path="-j" type="boolean">
+  Emit results as JSON to stdout instead of the default formatted text. Also available as `--json`. Does not affect logging output on stderr.
+</ParamField>
+
+The `-j` flag serializes the full `ResultDocument` as JSON. Redirect stdout to save results to a file:
+
+```bash
+floss -j malware.exe > malware_strings.json
+```
+
+You can then reload and re-display the saved results without re-running analysis using `-l` / `--load` (see below).
+
+### ResultDocument structure
+
+The JSON output conforms to the `ResultDocument` schema:
+
+```json
+{
+  "metadata": {
+    "file_path": "malware.exe",
+    "version": "3.x.x",
+    "imagebase": 4194304,
+    "min_length": 4,
+    "language": "",
+    "language_version": "",
+    "language_selected": "",
+    "runtime": {
+      "total": 12.34,
+      "static_strings": 0.01,
+      "stack_strings": 2.10,
+      "tight_strings": 1.50,
+      "decoded_strings": 8.73
+    }
+  },
+  "analysis": {
+    "enable_static_strings": true,
+    "enable_stack_strings": true,
+    "enable_tight_strings": true,
+    "enable_decoded_strings": true,
+    "functions": {
+      "discovered": 142,
+      "library": 31,
+      "analyzed_stack_strings": 111,
+      "analyzed_tight_strings": 4,
+      "analyzed_decoded_strings": 20
+    }
+  },
+  "strings": {
+    "static_strings": [...],
+    "stack_strings": [...],
+    "tight_strings": [...],
+    "decoded_strings": [...],
+    "language_strings": [...],
+    "language_strings_missed": [...]
+  }
+}
+```
+
+Each string entry within `strings` carries encoding information (`ASCII`, `UTF-16LE`, or `UTF-8`) and offset or address metadata depending on type.
+
+## Loading saved results (-l / --load)
+
+<ParamField path="-l" type="boolean">
+  Load and display an existing FLOSS JSON results file instead of analyzing a binary. Also available as `--load`.
+</ParamField>
+
+Re-display previously saved JSON results without re-running the full analysis:
+
+```bash
+floss -l malware_strings.json
+```
+
+You can combine `-l` with `--only`, `--no`, `-n`, and rendering flags to filter or reformat the saved data interactively.
+
+## Verbose mode (-v / --verbose)
+
+<ParamField path="-v" type="boolean">
+  Enable verbose output including function offsets and string encoding details. Also available as `--verbose`. Does not affect JSON output.
+</ParamField>
+
+Verbose mode annotates each string with additional context:
+
+- **Decoded strings**: encoding type, address of the decoding routine, and the call site address
+- **Stack/tight strings**: encoding type, function address, and program counter at extraction time
+
+```bash
+floss -v malware.exe
+```
+
+Example verbose output for a decoded string:
+
+```
+FLOSS DECODED STRINGS
+=====================
+http://malware.example.com [ASCII] decoded by 0x401a30 called at 0x402b10
+```
+
+## Quiet mode (-q / --quiet)
+
+<ParamField path="-q" type="boolean">
+  Suppress all formatting, section headers, and status output. Prints one string per line on stdout. Also available as `--quiet`.
+</ParamField>
+
+Quiet mode strips section headers and metadata, leaving only the raw string values — one per line. This is the right format for piping into `grep`, `sort`, or other text-processing tools:
+
+```bash
+floss -q malware.exe | grep -i "http"
+```
+
+<Note>
+In quiet mode, the string type (static, decoded, stackstring, tightstring) is not included in the output.
+</Note>
+
+## Color control (--color)
+
+<ParamField path="--color" type="string" default="auto">
+  Control ANSI color codes in results output. Accepts `auto`, `always`, or `never`. Default is `auto`, which enables color only during interactive terminal sessions.
+</ParamField>
+
+```bash
+floss --color never malware.exe   # force plain text, no ANSI codes
+floss --color always malware.exe  # force color even when output is redirected
+floss --color auto malware.exe    # default: color only in interactive sessions
+```
+
+Use `--color never` when saving text output to a file or when your terminal does not support ANSI escape codes.
+
+## Minimum string length (-n / --minimum-length)
+
+<ParamField path="-n" type="number" default="4">
+  Set the minimum number of characters a string must have to be included in results. Also available as `--minimum-length`.
+</ParamField>
+
+The default minimum length is **4**. Increase it to reduce false positives from short random byte sequences that happen to be printable:
+
+```bash
+floss -n 10 malware.exe
+```
+
+<Tip>
+A higher minimum length reduces noise but may cause FLOSS to miss short meaningful strings like `cmd`, `run`, or `GET`. Start with the default and raise it if results are too noisy.
+</Tip>
+
+You can also apply `-n` when loading saved results with `-l` to re-filter an existing JSON file:
+
+```bash
+floss -l malware_strings.json -n 8
+```
+
+## Debug logging (-d / --debug)
+
+<ParamField path="-d" type="boolean">
+  Enable debug logging output on stderr. Specify the flag multiple times to increase verbosity: `-d` for DEBUG, `-dd` for TRACE (includes emulator driver logs), `-ddd` for SUPERTRACE (enables API hook and function argument logs). Also available as `--debug`.
+</ParamField>
+
+```bash
+floss -d malware.exe          # DEBUG level
+floss -dd malware.exe         # TRACE level (includes vivisect emulator logs)
+floss -ddd malware.exe        # SUPERTRACE (most verbose)
+```
+
+<Note>
+Debug output is written to stderr and does not interfere with string results on stdout. This flag is useful when diagnosing why FLOSS is not finding expected strings.
+</Note>

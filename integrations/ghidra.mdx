@@ -1,0 +1,72 @@
+---
+title: "Ghidra Integration: Apply FLOSS Results with PyGhidra"
+description: "Generate a PyGhidra-compatible script from FLOSS JSON output and run it in Ghidra's Script Manager to annotate your program with recovered malware strings."
+---
+
+The `render-ghidra-import-script.py` script converts a FLOSS JSON result document into a PyGhidra-compatible Python script. When you run the generated script inside Ghidra's Script Manager, it adds EOL comments and bookmarks at every address where FLOSS recovered a string — decoded strings, stack strings, and tight strings alike.
+
+<Note>
+  The generated script targets **Ghidra 12.0 and later**, which uses PyGhidra (Python 3) instead of Jython (Python 2.7). If you are on an older version of Ghidra, the script will not run as-is.
+</Note>
+
+## Workflow
+
+<Steps>
+  <Step title="Run FLOSS and save JSON output">
+    Run FLOSS on the target binary with the `-j` flag and redirect the output to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Generate the Ghidra script">
+    Pass the JSON file to `render-ghidra-import-script.py` and redirect the output to a `.py` file.
+
+    ```bash
+    python render-ghidra-import-script.py floss_results.json > apply_floss.py
+    ```
+
+    The generated script is a standalone PyGhidra script. It includes its own helper functions and does not require any additional imports beyond what Ghidra's scripting environment provides.
+  </Step>
+  <Step title="Open the binary in Ghidra">
+    Open the same binary in Ghidra and wait for auto-analysis to complete.
+  </Step>
+  <Step title="Run the script in Ghidra Script Manager">
+    In Ghidra, open **Window → Script Manager**. Click the **Run Script** button (the green play icon) and select `apply_floss.py`.
+
+    Alternatively, use **File → Run Script...** from the CodeBrowser menu.
+
+    Progress messages appear in Ghidra's console output.
+  </Step>
+  <Step title="Review the annotations">
+    FLOSS strings appear as EOL comments in the disassembly listing. Each annotated address also receives a bookmark in the **Bookmarks** window, categorized as `decoded_string` or `stackstring` depending on the string type.
+  </Step>
+</Steps>
+
+## Annotation behavior
+
+The generated script uses Ghidra's `CodeUnit.EOL_COMMENT` API to apply comments and `createBookmark` to mark notable locations.
+
+| String type | Annotation |
+|---|---|
+| Decoded string (global address) | EOL comment at the global virtual address + `decoded_string` bookmark |
+| Decoded string (decoded at call site) | EOL comment at the decode call address + `decoded_string` bookmark |
+| Stack string | EOL comment on all instructions referencing the stack variable, plus a comment on the stack frame variable itself; `stackstring` bookmark at the function entry |
+| Tight string | Same as stack string |
+
+For stack strings, the script searches all instructions within the function for references to the stack frame offset. If no references are found, it falls back to adding the comment at the function entry point.
+
+<Tip>
+  The script handles duplicates — if a string already exists in a comment at a given address, it is not appended again. You can safely run the script multiple times without creating repeated annotations.
+</Tip>
+
+## Script metadata
+
+The generated script includes Ghidra script metadata so it appears correctly in the Script Manager:
+
+```python
+# @category FLOSS
+# @menupath Tools.FLOSS.Apply FLOSS Results
+```
+
+You can also browse to it via **Tools → FLOSS → Apply FLOSS Results** in Ghidra's menu after adding its containing directory to the Script Manager's script directories.

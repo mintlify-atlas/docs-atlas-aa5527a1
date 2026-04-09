@@ -1,0 +1,70 @@
+---
+title: "x64dbg Integration: Load FLOSS Results as a JSON Database"
+description: "Generate an x64dbg JSON comment database from FLOSS output and open it directly in x64dbg to annotate the debugger view with recovered malware strings."
+---
+
+The `render-x64dbg-database.py` script converts a FLOSS JSON result document into an x64dbg database file. Unlike the other integration scripts, the output is not a Python script — it is a JSON database that x64dbg opens directly. Each recovered decoded string becomes a comment at the corresponding relative virtual address (RVA) in the debugger's comment view.
+
+<Note>
+  The x64dbg integration annotates **decoded strings** only. Stack strings and tight strings are not included in the database because x64dbg addresses comments by module RVA, which does not map cleanly to stack frame offsets.
+</Note>
+
+## Workflow
+
+<Steps>
+  <Step title="Run FLOSS and save JSON output">
+    Run FLOSS on the target binary with the `-j` flag and redirect the output to a file.
+
+    ```bash
+    floss -j suspicious.exe > floss_results.json
+    ```
+  </Step>
+  <Step title="Generate the x64dbg database">
+    Pass the JSON file to `render-x64dbg-database.py` and redirect the output to a `.json` file.
+
+    ```bash
+    python render-x64dbg-database.py floss_results.json > database.json
+    ```
+
+    The script computes each comment's address as an RVA by subtracting `metadata.imagebase` from the virtual address in the FLOSS result. Multiple strings decoded at the same address are merged into a single comment entry, separated by tab characters.
+  </Step>
+  <Step title="Open the binary in x64dbg">
+    Open the target binary in x64dbg.
+  </Step>
+  <Step title="Load the database in x64dbg">
+    In x64dbg, use **File → Import database** and select `database.json`.
+
+    x64dbg loads all comments from the database and displays them at the corresponding addresses in the CPU disassembly view.
+  </Step>
+  <Step title="Review the annotations">
+    Navigate to any annotated address in x64dbg to see the FLOSS comment. All comments are prefixed with `FLOSS:` to distinguish them from manually added annotations.
+  </Step>
+</Steps>
+
+## Database format
+
+The generated JSON file follows the x64dbg database schema:
+
+```json
+{
+  "comments": [
+    {
+      "text": "FLOSS: http://malicious.example.com",
+      "manual": false,
+      "module": "suspicious.exe",
+      "address": "0x1a00"
+    }
+  ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `text` | The recovered string, prefixed with `FLOSS:`. Multiple strings at the same RVA are joined with a tab character. |
+| `manual` | Always `false` — these are imported comments, not manually authored ones. |
+| `module` | The filename of the analyzed binary, derived from `metadata.file_path`. |
+| `address` | The RVA of the annotation, computed as `virtual_address - imagebase`. |
+
+<Tip>
+  If multiple decoded strings share the same address (for example, a decoding routine that writes to the same global buffer), `render-x64dbg-database.py` merges them into a single comment entry rather than creating duplicate entries for the same RVA.
+</Tip>

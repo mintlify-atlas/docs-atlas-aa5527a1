@@ -1,0 +1,433 @@
+---
+title: 'Using FLOSS as a Python Library for Malware Analysis'
+description: 'Integrate FLOSS into Python scripts and automated analysis pipelines. Load results, traverse the data model, and call main() programmatically.'
+---
+
+FLOSS is designed to be invoked as a Python library just as easily as from the command line. You can load existing FLOSS JSON results, traverse the structured data model, and call the analysis pipeline directly from your own scripts.
+
+<Note>FLOSS requires **Python >= 3.10**. Install it into a virtual environment to avoid conflicts with other tools.</Note>
+
+## Installation
+
+Install the `flare-floss` package from PyPI:
+
+```bash
+pip install flare-floss
+```
+
+You can verify the installation by importing the package:
+
+```python
+import floss
+print(dir(floss))
+```
+
+## The ResultDocument data model
+
+All FLOSS output is structured around the `ResultDocument` class, defined in `floss/results.py`. Every field is a typed pydantic dataclass, so you get validation and IDE auto-completion for free.
+
+The top-level hierarchy is:
+
+```
+ResultDocument
+├── metadata: Metadata
+│   └── runtime: Runtime
+├── analysis: Analysis
+│   └── functions: Functions
+└── strings: Strings
+    ├── static_strings: List[StaticString]
+    ├── stack_strings: List[StackString]
+    ├── tight_strings: List[TightString]
+    ├── decoded_strings: List[DecodedString]
+    ├── language_strings: List[StaticString]
+    └── language_strings_missed: List[StaticString]
+```
+
+---
+
+### ResultDocument
+
+The top-level container returned by every FLOSS analysis.
+
+<ResponseField name="metadata" type="Metadata" required>
+  File and run metadata, including paths, version, and timing information.
+  <Expandable title="Metadata fields">
+    <ResponseField name="file_path" type="str" required>
+      Absolute or relative path to the analyzed binary.
+    </ResponseField>
+    <ResponseField name="version" type="str">
+      FLOSS version string used to produce this result.
+    </ResponseField>
+    <ResponseField name="imagebase" type="int">
+      Image base address of the loaded binary, in decimal. Zero for shellcode or when not applicable.
+    </ResponseField>
+    <ResponseField name="min_length" type="int">
+      Minimum string length used during extraction. Default is `4`.
+    </ResponseField>
+    <ResponseField name="language" type="str">
+      Auto-detected source language, e.g. `"go"`, `"rust"`, or `""` for unknown.
+    </ResponseField>
+    <ResponseField name="language_version" type="str">
+      Detected version of the source language compiler or runtime, when available.
+    </ResponseField>
+    <ResponseField name="language_selected" type="str">
+      Language explicitly selected by the user via `--language`, if different from the auto-detected language.
+    </ResponseField>
+    <ResponseField name="runtime" type="Runtime">
+      Per-phase timing data in seconds.
+      <Expandable title="Runtime fields">
+        <ResponseField name="start_date" type="datetime">
+          Timestamp when analysis began.
+        </ResponseField>
+        <ResponseField name="total" type="float">
+          Total elapsed time in seconds.
+        </ResponseField>
+        <ResponseField name="vivisect" type="float">
+          Time spent loading and analyzing the binary with vivisect.
+        </ResponseField>
+        <ResponseField name="find_features" type="float">
+          Time spent identifying candidate decoding functions.
+        </ResponseField>
+        <ResponseField name="static_strings" type="float">
+          Time spent extracting static strings.
+        </ResponseField>
+        <ResponseField name="language_strings" type="float">
+          Time spent on language-specific string extraction.
+        </ResponseField>
+        <ResponseField name="stack_strings" type="float">
+          Time spent extracting stack strings.
+        </ResponseField>
+        <ResponseField name="tight_strings" type="float">
+          Time spent extracting tight strings.
+        </ResponseField>
+        <ResponseField name="decoded_strings" type="float">
+          Time spent emulating decoding routines.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="analysis" type="Analysis">
+  Configuration flags and function-level statistics for this run.
+  <Expandable title="Analysis fields">
+    <ResponseField name="enable_static_strings" type="bool">
+      Whether static string extraction was enabled. Default: `True`.
+    </ResponseField>
+    <ResponseField name="enable_stack_strings" type="bool">
+      Whether stack string extraction was enabled. Default: `True`.
+    </ResponseField>
+    <ResponseField name="enable_tight_strings" type="bool">
+      Whether tight string extraction was enabled. Default: `True`.
+    </ResponseField>
+    <ResponseField name="enable_decoded_strings" type="bool">
+      Whether decoded string extraction was enabled. Default: `True`.
+    </ResponseField>
+    <ResponseField name="functions" type="Functions">
+      Counts and scores for analyzed functions.
+      <Expandable title="Functions fields">
+        <ResponseField name="discovered" type="int">
+          Total number of functions found in the binary.
+        </ResponseField>
+        <ResponseField name="library" type="int">
+          Number of functions identified as library code (excluded from analysis).
+        </ResponseField>
+        <ResponseField name="analyzed_stack_strings" type="int">
+          Number of functions analyzed for stack strings.
+        </ResponseField>
+        <ResponseField name="analyzed_tight_strings" type="int">
+          Number of functions analyzed for tight strings.
+        </ResponseField>
+        <ResponseField name="analyzed_decoded_strings" type="int">
+          Number of functions analyzed for decoded strings.
+        </ResponseField>
+        <ResponseField name="decoding_function_scores" type="Dict[int, Dict[str, float]]">
+          Mapping of function address to its decoding score and cross-reference count, e.g. `{0x401000: {"score": 0.93, "xrefs_to": 12}}`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="strings" type="Strings">
+  All extracted strings grouped by type.
+  <Expandable title="Strings fields">
+    <ResponseField name="static_strings" type="List[StaticString]">
+      Strings found in the raw binary data (ASCII and UTF-16LE).
+    </ResponseField>
+    <ResponseField name="stack_strings" type="List[StackString]">
+      Strings constructed on the stack at runtime.
+    </ResponseField>
+    <ResponseField name="tight_strings" type="List[TightString]">
+      A special form of stack strings decoded inside tight loops.
+    </ResponseField>
+    <ResponseField name="decoded_strings" type="List[DecodedString]">
+      Strings decoded by emulated decoding routines.
+    </ResponseField>
+    <ResponseField name="language_strings" type="List[StaticString]">
+      Language-specific strings extracted using Go or Rust heuristics.
+    </ResponseField>
+    <ResponseField name="language_strings_missed" type="List[StaticString]">
+      Static strings in language-specific regions that were not captured by the language extractor.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### StringEncoding
+
+An enum describing the encoding of an extracted string.
+
+| Value | Meaning |
+|-------|---------|
+| `StringEncoding.ASCII` | 7-bit ASCII |
+| `StringEncoding.UTF16LE` | UTF-16 little-endian (Windows wide strings) |
+| `StringEncoding.UTF8` | UTF-8 (used for language-specific strings) |
+
+---
+
+### StaticString
+
+A string extracted directly from the raw bytes of the binary.
+
+<ResponseField name="string" type="str" required>
+  The decoded string value.
+</ResponseField>
+<ResponseField name="offset" type="int" required>
+  Byte offset into the input file where the string starts.
+</ResponseField>
+<ResponseField name="encoding" type="StringEncoding" required>
+  Encoding of the string: `ASCII`, `UTF-16LE`, or `UTF-8`.
+</ResponseField>
+
+---
+
+### StackString
+
+A string that is assembled character-by-character on the call stack at runtime.
+
+<ResponseField name="function" type="int" required>
+  Address of the function in which the stack string was found.
+</ResponseField>
+<ResponseField name="string" type="str" required>
+  The extracted string value.
+</ResponseField>
+<ResponseField name="encoding" type="StringEncoding" required>
+  Encoding of the string.
+</ResponseField>
+<ResponseField name="program_counter" type="int" required>
+  Value of the program counter (instruction pointer) at the moment the string was captured.
+</ResponseField>
+<ResponseField name="stack_pointer" type="int" required>
+  Value of the stack pointer at the moment the string was captured (top of stack).
+</ResponseField>
+<ResponseField name="original_stack_pointer" type="int" required>
+  Value of the stack pointer when the function was entered (bottom of the stack frame).
+</ResponseField>
+<ResponseField name="offset" type="int" required>
+  Offset from the current stack pointer to where the string begins.
+</ResponseField>
+<ResponseField name="frame_offset" type="int" required>
+  Offset from the function's base frame pointer to where the string begins.
+</ResponseField>
+
+---
+
+### TightString
+
+Identical structure to `StackString`. Tight strings are a special case found inside tight loops where characters are decoded directly into stack memory.
+
+---
+
+### AddressType
+
+An enum describing the memory region where a decoded string resides.
+
+| Value | Meaning |
+|-------|---------|
+| `AddressType.STACK` | String is on the call stack |
+| `AddressType.GLOBAL` | String is in a global/static memory region |
+| `AddressType.HEAP` | String is on the heap |
+
+---
+
+### DecodedString
+
+A string recovered by emulating a decoding routine.
+
+<ResponseField name="address" type="int" required>
+  Address in the emulated memory where the decoded string resides.
+</ResponseField>
+<ResponseField name="address_type" type="AddressType" required>
+  Memory region type: `STACK`, `GLOBAL`, or `HEAP`.
+</ResponseField>
+<ResponseField name="string" type="str" required>
+  The decoded string value.
+</ResponseField>
+<ResponseField name="encoding" type="StringEncoding" required>
+  Encoding of the decoded string.
+</ResponseField>
+<ResponseField name="decoded_at" type="int" required>
+  Address of the call site where the decoding routine was invoked.
+</ResponseField>
+<ResponseField name="decoding_routine" type="int" required>
+  Address of the decoding function itself.
+</ResponseField>
+
+---
+
+## Loading existing FLOSS results
+
+If you have already run FLOSS and saved JSON output (via `floss --json`), you can load it directly without re-running analysis.
+
+### Using ResultDocument.parse_file()
+
+```python
+from pathlib import Path
+from floss.results import ResultDocument
+
+results = ResultDocument.parse_file(Path("output.json"))
+
+print(f"Analyzed: {results.metadata.file_path}")
+print(f"FLOSS version: {results.metadata.version}")
+print(f"Language detected: {results.metadata.language or 'unknown'}")
+print(f"Analysis took: {results.metadata.runtime.total:.2f}s")
+```
+
+### Using floss.results.load()
+
+`floss.results.load()` is the higher-level function used internally by the CLI. It accepts the same filtering options (functions, min_length) available on the command line.
+
+```python
+from pathlib import Path
+from floss.results import Analysis, load
+
+analysis = Analysis(
+    enable_static_strings=True,
+    enable_stack_strings=True,
+    enable_tight_strings=True,
+    enable_decoded_strings=True,
+)
+
+results = load(
+    sample=Path("output.json"),
+    analysis=analysis,
+    functions=[],       # empty list = no function filter
+    min_length=4,
+)
+```
+
+<Warning>
+`load()` expects a FLOSS JSON results file as its `sample` argument, not a binary. Pass the path to the JSON output saved with `floss --json`, not the malware sample itself.
+</Warning>
+
+---
+
+## Iterating over results
+
+Once you have a `ResultDocument`, iterate over the string lists in `results.strings`:
+
+```python
+from pathlib import Path
+from floss.results import ResultDocument, StringEncoding
+
+results = ResultDocument.parse_file(Path("output.json"))
+
+# Static strings (ASCII and UTF-16LE from raw binary bytes)
+print("=== Static strings ===")
+for s in results.strings.static_strings:
+    print(f"  0x{s.offset:08x}  [{s.encoding.value:8}]  {s.string}")
+
+# Stack strings (assembled at runtime on the call stack)
+print("\n=== Stack strings ===")
+for s in results.strings.stack_strings:
+    print(
+        f"  func=0x{s.function:x}  pc=0x{s.program_counter:x}"
+        f"  [{s.encoding.value}]  {s.string}"
+    )
+
+# Tight strings (decoded inside tight loops)
+print("\n=== Tight strings ===")
+for s in results.strings.tight_strings:
+    print(f"  func=0x{s.function:x}  [{s.encoding.value}]  {s.string}")
+
+# Decoded strings (recovered by emulating decoding routines)
+print("\n=== Decoded strings ===")
+for s in results.strings.decoded_strings:
+    print(
+        f"  0x{s.address:x} ({s.address_type.value})"
+        f"  decoded_at=0x{s.decoded_at:x}"
+        f"  routine=0x{s.decoding_routine:x}"
+        f"  [{s.encoding.value}]  {s.string}"
+    )
+
+# Language-specific strings (Go/Rust)
+print("\n=== Language strings ===")
+for s in results.strings.language_strings:
+    print(f"  0x{s.offset:08x}  {s.string}")
+```
+
+### Filtering by encoding
+
+```python
+from floss.results import ResultDocument, StringEncoding
+from pathlib import Path
+
+results = ResultDocument.parse_file(Path("output.json"))
+
+wide_strings = [
+    s for s in results.strings.static_strings
+    if s.encoding == StringEncoding.UTF16LE
+]
+print(f"Found {len(wide_strings)} wide (UTF-16LE) static strings")
+```
+
+---
+
+## Calling main() programmatically
+
+You can invoke the full FLOSS analysis pipeline by calling `floss.main.main()` with a list of command-line argument strings. It returns an exit code (`0` on success, non-zero on error).
+
+```python
+import sys
+from floss.main import main
+
+# Equivalent to: floss --json suspicious.exe
+exit_code = main(["--json", "suspicious.exe"])
+sys.exit(exit_code)
+```
+
+<Tip>
+To capture the JSON output when calling `main()`, redirect `sys.stdout` before the call or use `subprocess` to run FLOSS as a child process and capture its output. The `main()` function writes results directly to stdout.
+</Tip>
+
+### Parsing output from main()
+
+```python
+import io
+import sys
+import json
+from pathlib import Path
+from floss.main import main
+from floss.results import ResultDocument
+
+# Capture stdout
+buf = io.StringIO()
+old_stdout = sys.stdout
+sys.stdout = buf
+
+exit_code = main(["--json", "suspicious.exe"])
+
+sys.stdout = old_stdout
+
+if exit_code == 0:
+    results = ResultDocument.model_validate_json(buf.getvalue())
+    print(f"Decoded strings found: {len(results.strings.decoded_strings)}")
+    for s in results.strings.decoded_strings:
+        print(f"  {s.string}")
+```
+
+<Note>
+`main()` accepts `argv=None` to read from `sys.argv[1:]`, or an explicit list of strings. The `sample` argument must be a path to a file that can be opened in binary read mode (`rb`).
+</Note>

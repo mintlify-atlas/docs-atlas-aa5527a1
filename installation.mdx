@@ -1,0 +1,143 @@
+---
+title: "Install FLOSS: Standalone Binary, pip, or From Source"
+description: "Three ways to install FLARE FLOSS: download a standalone binary, install via pip (Python 3.10+), or clone and install from source for development."
+---
+
+FLOSS offers three installation methods depending on your use case. If you want to run FLOSS from the command line without any Python setup, download a standalone binary. If you need FLOSS as a library in an automated analysis pipeline, install it via `pip`. If you want to modify the source code or contribute, clone the repository and install in editable mode.
+
+<Tabs>
+  <Tab title="Standalone binary">
+    ## Download the standalone binary
+
+    The standalone binary bundles the FLOSS source code, Python interpreter, and all required resources into a single executable file. You can run it without installing Python or any dependencies.
+
+    <Steps>
+      <Step title="Download the binary">
+        Go to the [FLOSS releases page](https://github.com/mandiant/flare-floss/releases) and download the binary for your platform:
+
+        - `floss-v3.1.1-windows.zip` — Windows
+        - `floss-v3.1.1-linux.zip` — Linux
+        - `floss-v3.1.1-macos.zip` — macOS
+
+        Extract the archive to get the `floss` (or `floss.exe` on Windows) executable.
+      </Step>
+      <Step title="Run FLOSS">
+        Invoke the binary directly from your terminal:
+
+        ```bash
+        floss malware.exe
+        ```
+
+        To confirm the installation works, display the help screen:
+
+        ```bash
+        floss -h
+        ```
+      </Step>
+    </Steps>
+
+    <Warning>
+      **macOS Gatekeeper notice:** On macOS Catalina or later, Gatekeeper will block the standalone binary on first run. To resolve this, run the binary once from the command line to trigger the block, then go to **System Preferences** → **Security & Privacy** → **General** and click **Allow Anyway**.
+    </Warning>
+  </Tab>
+
+  <Tab title="pip install">
+    ## Install via pip
+
+    Install FLOSS as a Python package to use it from the command line or import it as a library in your own scripts.
+
+    <Note>
+      FLOSS requires **Python 3.10 or later**. Verify your Python version with `python --version` before proceeding.
+    </Note>
+
+    <Steps>
+      <Step title="Install the flare-floss package">
+        Use `pip` to install the `flare-floss` package from PyPI:
+
+        ```bash
+        pip install flare-floss
+        ```
+
+        This installs the `floss` command-line tool and the `floss` Python module into your current environment.
+      </Step>
+      <Step title="Verify the installation">
+        Confirm FLOSS is installed and available:
+
+        ```bash
+        floss -h
+        ```
+      </Step>
+      <Step title="Import FLOSS in a Python script">
+        You can now import the `floss` module from any Python script:
+
+        ```python
+        #!/usr/env/python
+        import floss
+        print(dir(floss))
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="From source">
+    ## Install from source
+
+    Clone and install FLOSS in editable mode when you want to read, modify, or contribute to the source code. Changes you make to the local files are reflected immediately without reinstalling.
+
+    <Note>
+      FLOSS requires **Python 3.10 or later**. If you encounter `ERROR: Project has a 'pyproject.toml' and its build backend is missing the 'build_editable' hook`, upgrade pip and setuptools to the latest versions.
+    </Note>
+
+    <Steps>
+      <Step title="Clone the repository">
+        Clone the FLOSS repository to a local directory:
+
+        ```bash
+        git clone https://github.com/mandiant/flare-floss /local/path/to/src
+        ```
+
+        If you plan to run the test suite, clone with submodules to include the test data repository:
+
+        ```bash
+        git clone --recurse-submodules https://github.com/mandiant/flare-floss.git /local/path/to/src
+        ```
+      </Step>
+      <Step title="Install in editable mode">
+        Use `pip` to install FLOSS from your local checkout in editable mode. Python loads the `floss` module from this directory rather than copying it to `site-packages`:
+
+        ```bash
+        pip install -e /local/path/to/src
+        ```
+
+        The `floss` (Linux, macOS) or `floss.exe` (Windows) executable now points to this local directory.
+      </Step>
+      <Step title="Install development dependencies">
+        When contributing to FLOSS, install the pinned development dependencies from `requirements.txt` to ensure a reproducible environment:
+
+        ```bash
+        pip install -r requirements.txt
+        ```
+
+        To install all testing and development extras at once:
+
+        ```bash
+        pip install -e /local/path/to/src[dev]
+        ```
+      </Step>
+      <Step title="Set up pre-commit hooks (optional)">
+        FLOSS uses `pre-commit` to enforce consistent code style with `black`, `isort`, and `mypy`. Install the hooks to run linters automatically before every commit:
+
+        ```bash
+        pre-commit install --hook-type pre-commit
+        pre-commit install --hook-type pre-push
+        ```
+
+        To run all linters manually across the entire codebase:
+
+        ```bash
+        pre-commit run --all-files
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
